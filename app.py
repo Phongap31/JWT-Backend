@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, session
-from flask_jwt_extended import create_access_token, create_refresh_token
+from flask_jwt_extended import create_access_token, create_refresh_token, JWTManager
 from flask_bcrypt import Bcrypt
 from werkzeug.security import check_password_hash, generate_password_hash
 from models import *
@@ -13,6 +13,8 @@ app = Flask(__name__)
 app.secret_key = "okbro"
 app.config['SQLALCHEMY_DATABASE_URI'] = 'postgres://zvblamkcuzqqar:fe41bf1d9ef070c35ba1670bf172a6a3ca3b3af568eef0cd1548141259c6a804@ec2-54-158-222-248.compute-1.amazonaws.com:5432/detgrr1hkbgiv9'
 CORS(app)
+bcrypt = Bcrypt(app)
+jwt = JWTManager(app)
 
 class StudentSchema(Schema):
     id = fields.Int()
@@ -21,25 +23,41 @@ class StudentSchema(Schema):
     email = fields.Str()
     level = fields.Str()
 
-@app.route('/register')
+@app.route('/register', methods = ['POST'])
 def register():
-    username = request.get_json()['username']
-    email = request.get_json()['email']
-    password = Bcrypt.generate_password_hash(request.get_json()['password']).decode('utf-8')
+    params = json.loads(request.data)
+    print('params:', params)
+    username = params['username']
+    password = bcrypt.generate_password_hash(params['password']).decode('utf-8')
 
     found_user = User.query.filter_by(username=username).first()
     if found_user:
         return 'username exists!'
 
-    user = User(username = username, email = email, password = password)
-    # all_user = User.query.order_by(User.username).all()
-    # print(all_user)
-    # user_limit = User.query.limit(1).all()
-    # print('user: ', user_limit)
-    db.session.add(user)
+    userab = User(username = username, password = password)
+    db.session.add(userab)
     db.session.commit()
 
     return 'Register Successful!!'
+
+@app.route('/login', methods = ['POST'])
+def login():
+    params = json.loads(request.data)
+    found_user = User.query.filter_by(username = params['username']).first()
+    result = ''
+
+    if found_user:
+        if bcrypt.check_password_hash(found_user.password, params['password']):
+            access_token = create_access_token(identity = {
+                'username': found_user.username,
+            })
+            result = jsonify({'token': access_token})
+        else:
+            result = jsonify({'error': 'Email or password incorrect!'})
+    else:
+        result = jsonify({'error': 'User not found!!'})
+
+    return result
 
 @app.route('/api/get_all', methods = ["GET"])
 def get_all():
@@ -54,23 +72,45 @@ def get_all():
 
 @app.route('/api/add_stu', methods = ['POST'])
 def add_stu():
-    fullname = request.get_json()['fullname']
-    birthday = request.get_json()['birthday']
-    email = request.get_json()['email']
-    level = request.get_json()['level']
+    params = json.loads(request.data)
+    fullname = params['fullname']
+    birthday = params['birthday']
+    email = params['email']
+    level = params['level']
 
     found_student = Student.query.filter_by(email=email).first()
 
     if found_student:
-        return 'Student exist!'
+        return jsonify({'b':'Student exist!'})
     
-    student = Student(fullname, birthday, email, level)
+    student = Student(fullname = fullname, birthday = birthday, email = email, level = level)
     db.session.add(student)
     db.session.commit()
-    return 'Addition Successful!'
+    return jsonify({'a': 'Addition Successful!'})
+
+@app.route('/api/update/<id>', methods = ['POST'])
+def update(id):
+    params = json.loads(request.data)
+    found_stu = Student.query.filter_by(id=id).first()
+
+    found_stu.fullname = params['fullname']
+    found_stu.birthday = params['birthday']
+    found_stu.email = params['email']
+    found_stu.level = params['level']
+
+    db.session.commit()
+    return jsonify({'result': 'Update Success!'})
 
 
-@app.route('/api/delete_stu/<id>', methods = ['POST'])
+@app.route('/api/get_current/<id>', methods = ['GET'])
+def get_current(id):
+    found_stu = Student.query.filter_by(id=id).first()
+    studentSchema = StudentSchema()
+    stu = studentSchema.dump(found_stu)
+    
+    return jsonify(json.dumps(stu))
+
+@app.route('/api/delete_stu/<id>', methods = ['DELETE'])
 def delete_stu(id):
     found_del = Student.query.filter_by(id = id).first()
     if found_del:
