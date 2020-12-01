@@ -26,15 +26,15 @@ class StudentSchema(Schema):
 @app.route('/register', methods = ['POST'])
 def register():
     params = json.loads(request.data)
-    print('params:', params)
     username = params['username']
     password = bcrypt.generate_password_hash(params['password']).decode('utf-8')
+    email = params['email']
 
     found_user = User.query.filter_by(username=username).first()
     if found_user:
         return 'username exists!'
 
-    userab = User(username = username, password = password)
+    userab = User(username = username, password = password, email = email)
     db.session.add(userab)
     db.session.commit()
 
@@ -50,6 +50,7 @@ def login():
         if bcrypt.check_password_hash(found_user.password, params['password']):
             access_token = create_access_token(identity = {
                 'username': found_user.username,
+                'email': found_user.email
             })
             result = jsonify({'token': access_token})
         else:
@@ -58,6 +59,8 @@ def login():
         result = jsonify({'error': 'User not found!!'})
 
     return result
+
+
 
 @app.route('/api/get_all', methods = ["GET"])
 def get_all():
