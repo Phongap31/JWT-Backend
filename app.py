@@ -60,7 +60,21 @@ def login():
 
     return result
 
+@app.route('/api/change_pass', methods = ['POST'])
+def change_password():
+    params = json.loads(request.data)
+    print(params)
+    found_user = User.query.filter_by(username = params['username']).first()
 
+    if found_user:
+        if bcrypt.check_password_hash(found_user.password, params['currentP']):
+            found_user.password = bcrypt.generate_password_hash(params['newP']).decode('utf-8')
+            db.session.commit()
+            return jsonify({'result': 'Change Password Success!'})
+        else:
+            return 'Password incorrect!'
+    else:
+        return 'User Not Found!'
 
 @app.route('/api/get_all', methods = ["GET"])
 def get_all():
@@ -84,25 +98,30 @@ def add_stu():
     found_student = Student.query.filter_by(email=email).first()
 
     if found_student:
-        return jsonify({'b':'Student exist!'})
+        return jsonify({'result':'Student exist!'})
     
     student = Student(fullname = fullname, birthday = birthday, email = email, level = level)
     db.session.add(student)
     db.session.commit()
-    return jsonify({'a': 'Addition Successful!'})
+    return jsonify({'result': 'Addition Successful!'})
 
 @app.route('/api/update/<id>', methods = ['POST'])
 def update(id):
     params = json.loads(request.data)
     found_stu = Student.query.filter_by(id=id).first()
 
-    found_stu.fullname = params['fullname']
-    found_stu.birthday = params['birthday']
-    found_stu.email = params['email']
-    found_stu.level = params['level']
+    found_stu_by_email = Student.query.filter_by(email = params['email']).first()
 
-    db.session.commit()
-    return jsonify({'result': 'Update Success!'})
+    if found_stu_by_email:
+        return jsonify({'result': 'Email exist!'})
+    else:
+        found_stu.fullname = params['fullname']
+        found_stu.birthday = params['birthday']
+        found_stu.email = params['email']
+        found_stu.level = params['level']
+
+        db.session.commit()
+        return jsonify({'result': 'Update Success!'})
 
 
 @app.route('/api/get_current/<id>', methods = ['GET'])
@@ -119,9 +138,9 @@ def delete_stu(id):
     if found_del:
         db.session.delete(found_del)
         db.session.commit()
-        return 'Delete Successful!'
+        return jsonify({'result': 'Delete Successful!'})
     else:
-        return 'Student Not Found!'
+        return jsonify({'result':'Student Not Found!'})
 
 if __name__ == "__main__":
     db.__init__(app)
