@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, session
-from flask_jwt_extended import create_access_token, create_refresh_token, JWTManager
+from flask_jwt_extended import create_access_token, create_refresh_token, JWTManager, verify_jwt_in_request, verify_fresh_jwt_in_request
 from flask_bcrypt import Bcrypt
 from werkzeug.security import check_password_hash, generate_password_hash
 from models import *
@@ -7,14 +7,17 @@ from flask_sqlalchemy import SQLAlchemy
 from marshmallow import Schema, fields
 from datetime import date
 import json
+import flask
+import jwt
 from flask_cors import CORS
+from functools import wraps
 
 app = Flask(__name__)
 app.secret_key = "okbro"
 app.config['SQLALCHEMY_DATABASE_URI'] = 'postgres://zvblamkcuzqqar:fe41bf1d9ef070c35ba1670bf172a6a3ca3b3af568eef0cd1548141259c6a804@ec2-54-158-222-248.compute-1.amazonaws.com:5432/detgrr1hkbgiv9'
 CORS(app)
 bcrypt = Bcrypt(app)
-jwt = JWTManager(app)
+jwtoken = JWTManager(app)
 
 class StudentSchema(Schema):
     id = fields.Int()
@@ -49,12 +52,13 @@ def login():
     if found_user:
         if bcrypt.check_password_hash(found_user.password, params['password']):
             access_token = create_access_token(identity = {
+                'id': found_user.id,
                 'username': found_user.username,
                 'email': found_user.email
             })
             result = jsonify({'token': access_token})
         else:
-            result = jsonify({'error': 'Email or password incorrect!'})
+            result = jsonify({'error': 'Username or password incorrect!'})
     else:
         result = jsonify({'error': 'User not found!!'})
 
@@ -63,7 +67,6 @@ def login():
 @app.route('/api/change_pass', methods = ['POST'])
 def change_password():
     params = json.loads(request.data)
-    print(params)
     found_user = User.query.filter_by(username = params['username']).first()
 
     if found_user:
@@ -76,8 +79,32 @@ def change_password():
     else:
         return 'User Not Found!'
 
+#decorator for verifying the JWT
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        if 'Authorization' in request.headers:
+            token = request.headers.get('Authorization')
+        if not token:
+            return jsonify({'message': 'Token is missing!!'}), 401
+        try:
+            data = jwt.decode(token, app.config['SECRET_KEY'])
+            print('data:', data['identity']['id'])
+            current_user = User.query.filter_by(id = data['identity']['id']).first()
+
+        except:
+            return jsonify({'message': 'Token is invalid!!'})
+
+        return f(current_user, *args, **kwargs)
+
+    return decorated
+
+
+
 @app.route('/api/get_all', methods = ["GET"])
-def get_all():
+@token_required
+def get_all(current_user):
     listStudent = []
     all_student = Student.query.all()
     studentSchema = StudentSchema()
@@ -86,6 +113,9 @@ def get_all():
         listStudent.append(stu)
 
     return jsonify(json.dumps(listStudent))
+
+# def verify_token_authorization(token_request):
+
 
 @app.route('/api/add_stu', methods = ['POST'])
 def add_stu():
